@@ -91,6 +91,64 @@ def extract_latest_assistant_message(transcript_path: str) -> Optional[str]:
     return latest_assistant_message
 
 
+def extract_new_assistant_messages(
+    transcript_path: str,
+    last_timestamp: Optional[str] = None
+) -> list:
+    """
+    transcript JSONL ファイルから新しい assistant メッセージを抽出
+
+    Args:
+        transcript_path: transcript ファイルのパス
+        last_timestamp: 前回読み上げた最後のタイムスタンプ（ISO 8601形式）
+                       None の場合は全てのメッセージを抽出
+
+    Returns:
+        新しい assistant メッセージのリスト
+        各要素は {"timestamp": "...", "text": "..."} の辞書
+    """
+    if not os.path.exists(transcript_path):
+        return []
+
+    new_messages = []
+
+    with open(transcript_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                entry = json.loads(line)
+
+                # assistant ロールのメッセージを探す
+                # ClaudeCodeのtranscript形式: {"message": {"role": "assistant", "content": [...]}, "timestamp": "..."}
+                message = entry.get("message", {})
+                timestamp = entry.get("timestamp")
+
+                if message.get("role") == "assistant" and timestamp:
+                    # last_timestamp より新しいメッセージのみを抽出
+                    if last_timestamp is None or timestamp > last_timestamp:
+                        content = message.get("content", [])
+
+                        # content から text を抽出
+                        text_parts = []
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_parts.append(item.get("text", ""))
+
+                        if text_parts:
+                            new_messages.append({
+                                "timestamp": timestamp,
+                                "text": " ".join(text_parts)
+                            })
+
+            except json.JSONDecodeError:
+                continue
+
+    return new_messages
+
+
 def create_audio_query(
     voicevox_url: str,
     text: str,
@@ -232,50 +290,88 @@ def main(transcript_path: Optional[str] = None):
         args = parser.parse_args()
         transcript_path = args.transcript_path
 
-    # 最新の assistant メッセージを抽出
-    message = extract_latest_assistant_message(transcript_path)
-    if not message:
-        print("読み上げるメッセージが見つかりません", file=sys.stderr)
-        sys.exit(1)
+    # セッションIDを transcript_path から抽出
+    # 例: /Users/.../.claude/projects/-Users-...-work-cc-avator/7f4b7a0a-4288-49e5-b3bc-d00136b5c324.jsonl
+    # → 7f4b7a0a-4288-49e5-b3bc-d00136b5c324
+    session_id = Path(transcript_path).stem
 
-    print(f"読み上げ: {message[:100]}...")
+    # 前回読み上げ位置ファイルのパス
+    last_read_file = Path(f"/tmp/voicevox_last_read_{session_id}.txt")
 
-    # 音声クエリを作成
-    audio_query = create_audio_query(
-        voicevox_url,
-        message,
-        config["speaker_id"],
-        config.get("timeout", 30)
-    )
+    # 前回のタイムスタンプを読み込む
+    last_timestamp = None
+    if last_read_file.exists():
+        try:
+            with open(last_read_file, 'r') as f:
+                last_timestamp = f.read().strip()
+                print(f"前回読み上げ位置: {last_timestamp}")
+        except Exception as e:
+            print(f"前回読み上げ位置の読み込みに失敗: {e}", file=sys.stderr)
 
-    if not audio_query:
-        sys.exit(1)
+    # 新しい assistant メッセージを抽出
+    new_messages = extract_new_assistant_messages(transcript_path, last_timestamp)
+    if not new_messages:
+        print("読み上げる新しいメッセージがありません")
+        sys.exit(0)
 
-    # 速度、音高、音量を調整
-    audio_query["speedScale"] = config.get("speed_scale", 1.0)
-    audio_query["pitchScale"] = config.get("pitch_scale", 0.0)
-    audio_query["volumeScale"] = config.get("volume_scale", 1.0)
+    print(f"新しいメッセージ: {len(new_messages)}件")
 
     # 出力ディレクトリを作成
     output_dir = Path(config.get("audio_output_dir", "/tmp/voicevox_audio"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 音声を合成
-    output_path = output_dir / "latest.wav"
-    if not synthesize_speech(
-        voicevox_url,
-        audio_query,
-        config["speaker_id"],
-        str(output_path),
-        config.get("timeout", 30)
-    ):
-        sys.exit(1)
+    # 各メッセージを順番に読み上げる
+    for i, msg in enumerate(new_messages):
+        message_text = msg["text"]
+        timestamp = msg["timestamp"]
 
-    # 音声を再生
-    if not play_audio(str(output_path)):
-        sys.exit(1)
+        print(f"[{i+1}/{len(new_messages)}] 読み上げ: {message_text[:100]}...")
 
-    print("音声読み上げが完了しました")
+        # 音声クエリを作成
+        audio_query = create_audio_query(
+            voicevox_url,
+            message_text,
+            config["speaker_id"],
+            config.get("timeout", 30)
+        )
+
+        if not audio_query:
+            print(f"メッセージ {i+1} の音声クエリ作成に失敗", file=sys.stderr)
+            continue
+
+        # 速度、音高、音量を調整
+        audio_query["speedScale"] = config.get("speed_scale", 1.0)
+        audio_query["pitchScale"] = config.get("pitch_scale", 0.0)
+        audio_query["volumeScale"] = config.get("volume_scale", 1.0)
+
+        # 音声を合成
+        output_path = output_dir / f"message_{i}.wav"
+        if not synthesize_speech(
+            voicevox_url,
+            audio_query,
+            config["speaker_id"],
+            str(output_path),
+            config.get("timeout", 30)
+        ):
+            print(f"メッセージ {i+1} の音声合成に失敗", file=sys.stderr)
+            continue
+
+        # 音声を再生
+        if not play_audio(str(output_path)):
+            print(f"メッセージ {i+1} の音声再生に失敗", file=sys.stderr)
+            continue
+
+    # 最後のメッセージのタイムスタンプを保存
+    if new_messages:
+        last_message_timestamp = new_messages[-1]["timestamp"]
+        try:
+            with open(last_read_file, 'w') as f:
+                f.write(last_message_timestamp)
+            print(f"読み上げ位置を保存: {last_message_timestamp}")
+        except Exception as e:
+            print(f"読み上げ位置の保存に失敗: {e}", file=sys.stderr)
+
+    print(f"音声読み上げが完了しました（{len(new_messages)}件）")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ try:
         load_config,
         check_voicevox_connection,
         extract_latest_assistant_message,
+        extract_new_assistant_messages,
         create_audio_query,
         synthesize_speech,
         play_audio
@@ -63,30 +64,46 @@ def test_check_voicevox_connection():
 
 def test_extract_latest_assistant_message():
     """transcript から最新 assistant メッセージを抽出するテスト"""
-    # テスト用の transcript JSONL を作成
+    # ClaudeCode の実際の transcript 形式でテスト用データを作成
     with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
         # ユーザーメッセージ
         f.write(json.dumps({
-            "role": "user",
-            "content": [{"type": "text", "text": "こんにちは"}]
+            "message": {
+                "role": "user",
+                "content": [{"type": "text", "text": "こんにちは"}]
+            },
+            "timestamp": "2026-01-22T05:00:00.000Z",
+            "uuid": "uuid-1"
         }) + "\n")
 
         # アシスタントメッセージ1
         f.write(json.dumps({
-            "role": "assistant",
-            "content": [{"type": "text", "text": "こんにちは！お元気ですか？"}]
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "こんにちは！お元気ですか？"}]
+            },
+            "timestamp": "2026-01-22T05:01:00.000Z",
+            "uuid": "uuid-2"
         }) + "\n")
 
         # ユーザーメッセージ2
         f.write(json.dumps({
-            "role": "user",
-            "content": [{"type": "text", "text": "元気です"}]
+            "message": {
+                "role": "user",
+                "content": [{"type": "text", "text": "元気です"}]
+            },
+            "timestamp": "2026-01-22T05:02:00.000Z",
+            "uuid": "uuid-3"
         }) + "\n")
 
         # アシスタントメッセージ2（最新）
         f.write(json.dumps({
-            "role": "assistant",
-            "content": [{"type": "text", "text": "それは良かったです。何かお手伝いできることはありますか？"}]
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "それは良かったです。何かお手伝いできることはありますか？"}]
+            },
+            "timestamp": "2026-01-22T05:03:00.000Z",
+            "uuid": "uuid-4"
         }) + "\n")
 
         temp_path = f.name
@@ -99,6 +116,85 @@ def test_extract_latest_assistant_message():
         expected = "それは良かったです。何かお手伝いできることはありますか？"
         assert latest_message == expected, f"Expected: {expected}, Got: {latest_message}"
         print("✓ test_extract_latest_assistant_message passed")
+    finally:
+        os.unlink(temp_path)
+
+
+def test_extract_new_assistant_messages():
+    """transcript から新しい assistant メッセージを抽出するテスト"""
+    # ClaudeCode の実際の transcript 形式でテスト用データを作成
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        # アシスタントメッセージ1（古い）
+        f.write(json.dumps({
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "最初のメッセージです。"}]
+            },
+            "timestamp": "2026-01-22T05:00:00.000Z",
+            "uuid": "uuid-1"
+        }) + "\n")
+
+        # アシスタントメッセージ2（これより後を取得）
+        f.write(json.dumps({
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "2番目のメッセージです。"}]
+            },
+            "timestamp": "2026-01-22T05:01:00.000Z",
+            "uuid": "uuid-2"
+        }) + "\n")
+
+        # ユーザーメッセージ（スキップされる）
+        f.write(json.dumps({
+            "message": {
+                "role": "user",
+                "content": [{"type": "text", "text": "ユーザーの質問"}]
+            },
+            "timestamp": "2026-01-22T05:02:00.000Z",
+            "uuid": "uuid-3"
+        }) + "\n")
+
+        # アシスタントメッセージ3（新しい1）
+        f.write(json.dumps({
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "3番目のメッセージです。"}]
+            },
+            "timestamp": "2026-01-22T05:03:00.000Z",
+            "uuid": "uuid-4"
+        }) + "\n")
+
+        # アシスタントメッセージ4（新しい2）
+        f.write(json.dumps({
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "4番目のメッセージです。"}]
+            },
+            "timestamp": "2026-01-22T05:04:00.000Z",
+            "uuid": "uuid-5"
+        }) + "\n")
+
+        temp_path = f.name
+
+    try:
+        # last_timestamp = "2026-01-22T05:01:00.000Z" より後のメッセージを抽出
+        new_messages = extract_new_assistant_messages(
+            temp_path,
+            last_timestamp="2026-01-22T05:01:00.000Z"
+        )
+
+        # 期待される結果: メッセージ3と4が抽出される
+        assert len(new_messages) == 2, f"Expected 2 messages, got {len(new_messages)}"
+        assert new_messages[0]["text"] == "3番目のメッセージです。"
+        assert new_messages[0]["timestamp"] == "2026-01-22T05:03:00.000Z"
+        assert new_messages[1]["text"] == "4番目のメッセージです。"
+        assert new_messages[1]["timestamp"] == "2026-01-22T05:04:00.000Z"
+
+        # last_timestamp が None の場合: 全てのメッセージを抽出
+        all_messages = extract_new_assistant_messages(temp_path, last_timestamp=None)
+        assert len(all_messages) == 4, f"Expected 4 messages, got {len(all_messages)}"
+
+        print("✓ test_extract_new_assistant_messages passed")
     finally:
         os.unlink(temp_path)
 
@@ -202,6 +298,7 @@ def run_all_tests():
         ("設定ファイル読み込み", test_load_config),
         ("VOICEVOX 接続チェック", test_check_voicevox_connection),
         ("最新メッセージ抽出", test_extract_latest_assistant_message),
+        ("新しいメッセージ抽出", test_extract_new_assistant_messages),
         ("音声クエリ作成", test_create_audio_query),
         ("音声合成", test_synthesize_speech),
         ("音声再生", test_play_audio),
