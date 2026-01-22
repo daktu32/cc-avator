@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "voicevox_url": "http://127.0.0.1:50021",
+  "speaker_id": 3,
+  "speed_scale": 1.0,
+  "pitch_scale": 0.0,
+  "volume_scale": 1.0,
+  "timeout": 30,
+  "audio_output_dir": "/tmp/voicevox_audio"
+}
