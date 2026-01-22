@@ -101,8 +101,10 @@ VOICEVOX TTS テスト実行
 
 ## コミット履歴
 
-### 2026-01-22: 初期実装
+### 2026-01-22: 初期実装 + リポジトリ公開
 - TDD に基づく音声読み上げプラグインの実装
 - Docker による VOICEVOX Engine 統合
 - ClaudeCode Stop フック連携
 - すべてのテストが成功
+- GitHub リポジトリ公開: https://github.com/daktu32/cc-avator
+- ClaudeCode settings.json に Stop フック追加済み
