@@ -21,14 +21,23 @@ LOG_FILE="${PROJECT_ROOT}/voicevox_tts.log"
 # stdin から JSON 入力を読み取る
 INPUT=$(cat)
 
-# transcript_path を抽出
-TRANSCRIPT_PATH=$(echo "$INPUT" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)
-
-# デバッグ用にログに記録
+# デバッグ用に入力全体をログに記録
 {
     echo "=== VOICEVOX TTS Hook ==="
     echo "Timestamp: $(date)"
-    echo "Transcript: $TRANSCRIPT_PATH"
+    echo "Input (first 500 chars): ${INPUT:0:500}"
+} >> "$LOG_FILE" 2>&1
+
+# transcript_path を抽出 (jq を使用、なければ grep で fallback)
+if command -v jq &> /dev/null; then
+    TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
+else
+    TRANSCRIPT_PATH=$(echo "$INPUT" | grep -o '"transcript_path":"[^"]*"' | cut -d'"' -f4)
+fi
+
+# デバッグ: 抽出結果をログに記録
+{
+    echo "Extracted transcript_path: $TRANSCRIPT_PATH"
 } >> "$LOG_FILE" 2>&1
 
 # transcript_path が取得できない場合はエラー
@@ -43,5 +52,8 @@ fi
     "$VENV_PYTHON" "$TTS_SCRIPT" "$TRANSCRIPT_PATH" >> "$LOG_FILE" 2>&1
 } &
 
-# 即座に終了（バックグラウンド実行）
+# 入力を次のフックに渡す（フックチェーンを継続）
+echo "$INPUT"
+
+# 正常終了
 exit 0
