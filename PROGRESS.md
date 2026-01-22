@@ -1,5 +1,31 @@
 # ClaudeCode VOICEVOX プラグイン 開発進捗
 
+## 2026-01-22 (夜): Transcript解析バグ修正 ✅
+
+### 修正内容
+
+ClaudeCode の実際の transcript 形式に合わせてメッセージ抽出ロジックを修正しました。
+
+#### 問題点
+- 読み上げが発動しない問題を調査
+- ログに「読み上げるメッセージが見つかりません」と表示される
+- transcript ファイルの構造が想定と異なっていた
+
+#### 解決策
+- `voicevox_tts.py` の `extract_latest_assistant_message()` 関数を修正
+- ClaudeCode の transcript 形式: `{"message": {"role": "assistant", "content": [...]}}`
+- `message.get("message", {}).get("role")` で正しくアクセスするように変更
+
+#### テスト結果
+```
+読み上げ: VOICEVOX Engineは正常に動作しています。それでは、修正したスクリプトをテストしてみましょう。...
+音声読み上げが完了しました
+```
+
+✅ 音声読み上げが正常に動作することを確認
+
+---
+
 ## 2026-01-22: 初期実装完了 ✅
 
 ### 実装内容

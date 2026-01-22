@@ -68,9 +68,11 @@ def extract_latest_assistant_message(transcript_path: str) -> Optional[str]:
                 continue
 
             try:
-                message = json.loads(line)
+                entry = json.loads(line)
 
                 # assistant ロールのメッセージを探す
+                # ClaudeCodeのtranscript形式: {"message": {"role": "assistant", "content": [...]}}
+                message = entry.get("message", {})
                 if message.get("role") == "assistant":
                     content = message.get("content", [])
 
