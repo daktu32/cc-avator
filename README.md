@@ -17,17 +17,22 @@ ClaudeCode の AI 応答を VOICEVOX Engine で自動音声読み上げするプ
 
 ## セットアップ
 
-### 1. リポジトリのクローン（または配置）
+### クイックインストール
 
 ```bash
-cd /Users/aiq/work/cc-avator
-```
+# リポジトリをクローン
+git clone https://github.com/daktu32/cc-avator.git
+cd cc-avator
 
-### 2. 自動セットアップ
-
-```bash
+# セットアップを実行
 ./scripts/setup.sh
 ```
+
+詳細なインストール手順は [INSTALLATION.md](INSTALLATION.md) を参照してください。
+
+### 自動セットアップの内容
+
+セットアップスクリプトは以下を実行します：
 
 このスクリプトは以下を自動実行します：
 - Python 仮想環境の作成
