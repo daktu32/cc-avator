@@ -30,6 +30,15 @@ except ImportError as e:
     print("これは正常です（TDDファースト）。実装後に再度テストを実行してください。")
     sys.exit(1)
 
+# voicevox_monitor モジュールをインポート
+try:
+    from voicevox_monitor import TranscriptMonitor
+except ImportError as e:
+    print(f"警告: voicevox_monitor モジュールのインポートに失敗しました: {e}")
+    print("これは正常です（TDDファースト）。実装後に再度テストを実行してください。")
+    # モニターのテストはスキップするが、既存テストは実行する
+    TranscriptMonitor = None
+
 
 def test_load_config():
     """設定ファイルの読み込みテスト"""
@@ -288,6 +297,136 @@ def test_play_audio():
         os.unlink(temp_path)
 
 
+def test_monitor_initialization():
+    """TranscriptMonitor の初期化テスト"""
+    if TranscriptMonitor is None:
+        print("スキップ: TranscriptMonitor がインポートできません")
+        return False
+
+    config_path = project_root / "config" / "voicevox.json"
+    config = load_config(config_path)
+
+    # モニターを初期化
+    with tempfile.TemporaryDirectory() as watch_dir:
+        monitor = TranscriptMonitor(
+            watch_dir=watch_dir,
+            config=config
+        )
+
+        # モニターが正しく初期化されたことを確認
+        assert monitor.watch_dir == watch_dir
+        assert monitor.config == config
+        print("✓ test_monitor_initialization passed")
+
+    return True
+
+
+def test_monitor_pid_file():
+    """モニターのPIDファイル管理テスト"""
+    if TranscriptMonitor is None:
+        print("スキップ: TranscriptMonitor がインポートできません")
+        return False
+
+    config_path = project_root / "config" / "voicevox.json"
+    config = load_config(config_path)
+
+    with tempfile.TemporaryDirectory() as watch_dir:
+        monitor = TranscriptMonitor(
+            watch_dir=watch_dir,
+            config=config
+        )
+
+        # PIDファイルのパスを取得
+        pid_file = monitor.get_pid_file()
+
+        # PIDファイルのパスが期待通りであることを確認
+        assert str(pid_file).startswith("/tmp/voicevox_monitor_")
+        assert str(pid_file).endswith(".pid")
+
+        # PIDファイルは初期状態では存在しないはず
+        assert not pid_file.exists()
+
+        print("✓ test_monitor_pid_file passed")
+
+    return True
+
+
+def test_transcript_stream_reader():
+    """TranscriptStreamReader のテスト"""
+    try:
+        from voicevox_tts import TranscriptStreamReader
+    except ImportError:
+        print("スキップ: TranscriptStreamReader がインポートできません")
+        return False
+
+    # 一時ファイルを作成
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        # 初期データ
+        f.write(json.dumps({
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "最初のメッセージ"}]
+            },
+            "timestamp": "2026-01-23T00:00:00.000Z"
+        }) + "\n")
+        temp_path = f.name
+
+    try:
+        # StreamReader を初期化
+        reader = TranscriptStreamReader(temp_path)
+        reader.open()
+
+        # 最初は新しい行がないはず
+        new_lines = reader.read_new_lines()
+        assert len(new_lines) == 0, f"Expected 0 new lines, got {len(new_lines)}"
+
+        # ファイルに新しい行を追加
+        with open(temp_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps({
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "2番目のメッセージ"}]
+                },
+                "timestamp": "2026-01-23T00:01:00.000Z"
+            }) + "\n")
+
+        # 新しい行を読み取る
+        new_lines = reader.read_new_lines()
+        assert len(new_lines) == 1, f"Expected 1 new line, got {len(new_lines)}"
+
+        # 内容を確認
+        entry = json.loads(new_lines[0])
+        assert entry["message"]["content"][0]["text"] == "2番目のメッセージ"
+
+        # さらに複数行を追加
+        with open(temp_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps({
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "3番目のメッセージ"}]
+                },
+                "timestamp": "2026-01-23T00:02:00.000Z"
+            }) + "\n")
+            f.write(json.dumps({
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "4番目のメッセージ"}]
+                },
+                "timestamp": "2026-01-23T00:03:00.000Z"
+            }) + "\n")
+
+        # 複数の新しい行を読み取る
+        new_lines = reader.read_new_lines()
+        assert len(new_lines) == 2, f"Expected 2 new lines, got {len(new_lines)}"
+
+        reader.close()
+        print("✓ test_transcript_stream_reader passed")
+        return True
+
+    finally:
+        os.unlink(temp_path)
+
+
 def run_all_tests():
     """すべてのテストを実行"""
     print("=" * 60)
@@ -302,6 +441,9 @@ def run_all_tests():
         ("音声クエリ作成", test_create_audio_query),
         ("音声合成", test_synthesize_speech),
         ("音声再生", test_play_audio),
+        ("モニター初期化", test_monitor_initialization),
+        ("モニターPIDファイル", test_monitor_pid_file),
+        ("TranscriptStreamReader", test_transcript_stream_reader),
     ]
 
     passed = 0

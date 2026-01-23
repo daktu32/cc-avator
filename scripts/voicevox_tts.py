@@ -10,7 +10,7 @@ import json
 import subprocess
 import argparse
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import requests
 
 
@@ -44,6 +44,106 @@ def check_voicevox_connection(voicevox_url: str, timeout: int = 5) -> bool:
         return response.status_code == 200
     except requests.exceptions.RequestException:
         return False
+
+
+class TranscriptStreamReader:
+    """
+    transcriptファイルをストリーミング読み取り
+    tail -f のような動作を実現
+    """
+
+    def __init__(self, file_path: str):
+        """
+        初期化
+
+        Args:
+            file_path: 監視対象のtranscriptファイルパス
+        """
+        self.file_path = file_path
+        self.file_handle = None
+        self.current_position = 0
+
+    def open(self):
+        """
+        ファイルを開いて現在位置を末尾にセット
+        既存の内容をスキップして、これから追加される行のみを読み取る
+        """
+        self.file_handle = open(self.file_path, 'r', encoding='utf-8')
+        # 既存の内容をスキップして末尾に移動
+        self.file_handle.seek(0, 2)  # SEEK_END (0: offset, 2: whence=end)
+        self.current_position = self.file_handle.tell()
+
+    def read_new_lines(self) -> List[str]:
+        """
+        新しく追加された行のみを読み取る
+
+        Returns:
+            新しい行のリスト（空白行は除外）
+        """
+        if not self.file_handle:
+            return []
+
+        new_lines = []
+        while True:
+            line = self.file_handle.readline()
+            if not line:
+                # EOF到達
+                break
+
+            # 空白行を除外
+            stripped = line.strip()
+            if stripped:
+                new_lines.append(stripped)
+
+        # 現在位置を更新
+        self.current_position = self.file_handle.tell()
+        return new_lines
+
+    def close(self):
+        """ファイルハンドルを閉じる"""
+        if self.file_handle:
+            self.file_handle.close()
+            self.file_handle = None
+
+    def __enter__(self):
+        """with文のサポート"""
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """with文のサポート"""
+        self.close()
+        return False
+
+
+def clean_text_for_speech(text: str) -> str:
+    """
+    音声読み上げ用にテキストをクリーンアップ
+
+    Args:
+        text: 元のテキスト
+
+    Returns:
+        クリーンアップされたテキスト
+    """
+    import re
+
+    # Markdown記号を除去
+    text = re.sub(r'[*_~`#]', '', text)  # *, _, ~, `, # を削除
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)  # リンク [text](url) → text
+    text = re.sub(r'```[a-z]*\n[\s\S]*?```', '', text)  # コードブロック除去
+    text = re.sub(r'`[^`]+`', '', text)  # インラインコード除去
+
+    # 絵文字を除去（一部）
+    text = re.sub(r'[✅❌🎉📊⚡🔧]', '', text)
+
+    # 連続する空白を1つに
+    text = re.sub(r'\s+', ' ', text)
+
+    # 前後の空白を削除
+    text = text.strip()
+
+    return text
 
 
 def extract_latest_assistant_message(transcript_path: str) -> Optional[str]:
@@ -138,10 +238,14 @@ def extract_new_assistant_messages(
                                 text_parts.append(item.get("text", ""))
 
                         if text_parts:
-                            new_messages.append({
-                                "timestamp": timestamp,
-                                "text": " ".join(text_parts)
-                            })
+                            raw_text = " ".join(text_parts)
+                            # 音声読み上げ用にテキストをクリーンアップ
+                            clean_text = clean_text_for_speech(raw_text)
+                            if clean_text:  # クリーンアップ後も文字が残っている場合のみ追加
+                                new_messages.append({
+                                    "timestamp": timestamp,
+                                    "text": clean_text
+                                })
 
             except json.JSONDecodeError:
                 continue
