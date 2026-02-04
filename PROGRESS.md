@@ -1,6 +1,102 @@
 # ClaudeCode VOICEVOX プラグイン 開発進捗
 
-## 2026-02-04: Phase 1 完了 - セッション管理機能を実装 🎯✅
+## 2026-02-04 (2): Phase 2 完了 - スキル実装 🎤✅
+
+### 実装内容
+
+`/voicevox` コマンドでセッションごとの設定を管理できるスキルを実装しました。
+TDD に従ってテストファーストで実装し、すべてのテストが成功しています。
+
+#### 1. スキルハンドラー
+- **新規作成**: `scripts/voicevox_skill.py`
+- **機能**:
+  - `execute_on()`: 読み上げを有効化
+  - `execute_off()`: 読み上げを無効化
+  - `execute_speaker()`: 話者を変更
+  - `execute_speed()`: 速度を変更
+  - `execute_status()`: 現在の設定を表示
+  - `get_current_session_id()`: 環境変数からセッションID取得
+  - `main()`: コマンドライン引数を解析して実行
+
+#### 2. スキル定義
+- **新規作成**: `.claude/skills/voicevox/SKILL.md`
+- **内容**:
+  - フロントマター: `name`, `description`, `disable-model-invocation`, `allowed-tools`
+  - 使用例とコマンド一覧
+  - Bash スクリプトによる実装
+  - 環境変数 `CLAUDE_SESSION_ID` を使用してセッションIDを取得
+
+#### 3. スキルコマンド
+- `/voicevox on` - 現在のセッションで読み上げを有効化
+- `/voicevox off` - 現在のセッションで読み上げを無効化
+- `/voicevox speaker <id>` - 話者をIDで変更
+- `/voicevox speed <rate>` - 読み上げ速度を変更（例: 1.5倍）
+- `/voicevox status` - 現在の設定を表示
+
+#### 4. TDD 手法に従った実装
+- **テスト追加**: `tests/test_voicevox.py` に Phase 2 のテストケースを追加
+  - `test_skill_on_off()`: on/offコマンドテスト
+  - `test_skill_speaker()`: speakerコマンドテスト
+  - `test_skill_speed()`: speedコマンドテスト
+  - `test_skill_status()`: statusコマンドテスト
+
+- **テスト結果**: **18 passed, 0 failed, 1 skipped**（100%成功率）
+- **プロセス**:
+  1. テストを先に作成（Red）
+  2. 実装してテストをパス（Green）
+  3. 手動テストで動作確認
+
+#### 5. 手動テスト結果
+すべてのコマンドが正常に動作することを確認：
+- ✅ `status`: 設定状態を表示（有効/無効、話者ID、速度など）
+- ✅ `off`: 読み上げを無効化
+- ✅ `speaker 8`: 話者をID 8に変更
+- ✅ `speed 1.5`: 速度を1.5倍に変更
+- ✅ `on`: 読み上げを有効化
+
+### 成果
+
+1. **ClaudeCode セッション内での制御**: `/voicevox` コマンドで簡単に設定変更
+   - コマンド一発で有効/無効を切り替え可能
+   - 話者や速度をリアルタイムで変更可能
+
+2. **ユーザビリティの向上**: 設定ファイルを手動編集する必要がない
+   - ClaudeCode に「読み上げを有効にして」と指示するだけ
+   - 設定変更が即座に反映される
+
+3. **実装品質**: TDD手法に従った高品質な実装
+   - 全テストパス（18/18）
+   - Phase 1 のテストも引き続き成功
+
+4. **拡張性**: Phase 3（MCP化）への基盤
+   - スキルハンドラーの関数を MCP サーバーから再利用可能
+   - セッション設定管理が完全に動作
+
+### 技術的ハイライト
+
+- **環境変数の活用**: `CLAUDE_SESSION_ID` でセッションIDを自動取得
+- **コマンドライン引数の解析**: 柔軟なコマンド処理
+- **絵文字を使った視覚的なフィードバック**: ✅⛔🎤⚡📊
+
+### 使用例
+
+```bash
+# ClaudeCode のセッション内で
+/voicevox on              # 読み上げ開始
+/voicevox speaker 8       # ずんだもん（仮）に変更
+/voicevox speed 1.5       # 1.5倍速に
+/voicevox status          # 設定確認
+/voicevox off             # 読み上げ停止
+```
+
+### 次のステップ
+
+- **Phase 3**: MCP化（外部ツールからの制御）の実装（オプション）
+- または、Phase 1-2 の実装で十分な機能が揃ったため、ここで完了としても良い
+
+---
+
+## 2026-02-04 (1): Phase 1 完了 - セッション管理機能を実装 🎯✅
 
 ### 実装内容
 
