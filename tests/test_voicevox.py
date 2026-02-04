@@ -39,6 +39,22 @@ except ImportError as e:
     # モニターのテストはスキップするが、既存テストは実行する
     TranscriptMonitor = None
 
+# voicevox_config モジュールをインポート（Phase 1: セッション管理）
+try:
+    from voicevox_config import (
+        get_session_config_path,
+        load_session_config,
+        save_session_config,
+        delete_session_config
+    )
+except ImportError as e:
+    print(f"警告: voicevox_config モジュールのインポートに失敗しました: {e}")
+    print("これは正常です（TDDファースト）。実装後に再度テストを実行してください。")
+    get_session_config_path = None
+    load_session_config = None
+    save_session_config = None
+    delete_session_config = None
+
 
 def test_load_config():
     """設定ファイルの読み込みテスト"""
@@ -427,6 +443,147 @@ def test_transcript_stream_reader():
         os.unlink(temp_path)
 
 
+# ===================================================================
+# Phase 1: セッション管理テスト
+# ===================================================================
+
+def test_get_session_config_path():
+    """セッション設定ファイルのパス取得テスト"""
+    if get_session_config_path is None:
+        print("スキップ: voicevox_config モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-123"
+    config_path = get_session_config_path(session_id, project_root)
+
+    # パスの形式を確認
+    expected_path = project_root / ".claude" / "voicevox_sessions" / f"{session_id}.json"
+    assert config_path == expected_path, f"Expected: {expected_path}, Got: {config_path}"
+
+    print("✓ test_get_session_config_path passed")
+    return True
+
+
+def test_save_and_load_session_config():
+    """セッション設定の保存と読み込みテスト"""
+    if save_session_config is None or load_session_config is None:
+        print("スキップ: voicevox_config モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-save-load"
+
+    try:
+        # テスト用の設定を保存
+        test_config = {
+            "enabled": False,
+            "speaker_id": 8,
+            "speed_scale": 1.5
+        }
+        save_session_config(session_id, test_config, project_root)
+
+        # 保存した設定を読み込む
+        loaded_config = load_session_config(session_id, project_root)
+
+        # セッション設定が正しく反映されていることを確認
+        assert loaded_config["enabled"] == False, f"Expected enabled=False, Got: {loaded_config['enabled']}"
+        assert loaded_config["speaker_id"] == 8, f"Expected speaker_id=8, Got: {loaded_config['speaker_id']}"
+        assert loaded_config["speed_scale"] == 1.5, f"Expected speed_scale=1.5, Got: {loaded_config['speed_scale']}"
+
+        # グローバル設定から継承されている項目も確認
+        assert "voicevox_url" in loaded_config, "voicevox_url should be inherited from global config"
+        assert "timeout" in loaded_config, "timeout should be inherited from global config"
+
+        print("✓ test_save_and_load_session_config passed")
+        return True
+
+    finally:
+        # クリーンアップ
+        if delete_session_config:
+            delete_session_config(session_id, project_root)
+
+
+def test_config_merge_priority():
+    """設定のマージ優先順位テスト"""
+    if save_session_config is None or load_session_config is None:
+        print("スキップ: voicevox_config モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-priority"
+
+    try:
+        # グローバル設定: speaker_id=3, enabled=true（config/voicevox.json）
+        # セッション設定: speaker_id=8, enabled=false
+        session_config = {
+            "enabled": False,
+            "speaker_id": 8
+        }
+        save_session_config(session_id, session_config, project_root)
+
+        # マージされた設定を読み込む
+        merged_config = load_session_config(session_id, project_root)
+
+        # セッション設定が優先されることを確認
+        assert merged_config["enabled"] == False, "Session config should override global config for 'enabled'"
+        assert merged_config["speaker_id"] == 8, "Session config should override global config for 'speaker_id'"
+
+        # セッション設定にない項目はグローバル設定が使われることを確認
+        assert merged_config["voicevox_url"] == "http://127.0.0.1:50021", "Global config should be used for 'voicevox_url'"
+        assert merged_config["timeout"] == 60, "Global config should be used for 'timeout'"
+
+        print("✓ test_config_merge_priority passed")
+        return True
+
+    finally:
+        # クリーンアップ
+        if delete_session_config:
+            delete_session_config(session_id, project_root)
+
+
+def test_session_config_not_exists():
+    """セッション設定が存在しない場合のテスト"""
+    if load_session_config is None:
+        print("スキップ: voicevox_config モジュールがインポートできません")
+        return False
+
+    # 存在しないセッションIDで設定を読み込む
+    session_id = "non-existent-session-999"
+    config = load_session_config(session_id, project_root)
+
+    # グローバル設定が返されることを確認
+    assert config["enabled"] == True, "Should use global config when session config doesn't exist"
+    assert config["speaker_id"] == 3, "Should use global config speaker_id"
+    assert config["voicevox_url"] == "http://127.0.0.1:50021", "Should use global config voicevox_url"
+
+    print("✓ test_session_config_not_exists passed")
+    return True
+
+
+def test_delete_session_config():
+    """セッション設定の削除テスト"""
+    if save_session_config is None or delete_session_config is None:
+        print("スキップ: voicevox_config モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-delete"
+
+    # 設定を作成
+    test_config = {"enabled": False}
+    save_session_config(session_id, test_config, project_root)
+
+    # 設定ファイルが存在することを確認
+    config_path = get_session_config_path(session_id, project_root)
+    assert config_path.exists(), "Config file should exist after save"
+
+    # 設定を削除
+    delete_session_config(session_id, project_root)
+
+    # 設定ファイルが削除されたことを確認
+    assert not config_path.exists(), "Config file should be deleted"
+
+    print("✓ test_delete_session_config passed")
+    return True
+
+
 def run_all_tests():
     """すべてのテストを実行"""
     print("=" * 60)
@@ -444,6 +601,12 @@ def run_all_tests():
         ("モニター初期化", test_monitor_initialization),
         ("モニターPIDファイル", test_monitor_pid_file),
         ("TranscriptStreamReader", test_transcript_stream_reader),
+        # Phase 1: セッション管理テスト
+        ("[Phase1] セッション設定パス取得", test_get_session_config_path),
+        ("[Phase1] セッション設定の保存と読み込み", test_save_and_load_session_config),
+        ("[Phase1] 設定マージ優先順位", test_config_merge_priority),
+        ("[Phase1] セッション設定が存在しない場合", test_session_config_not_exists),
+        ("[Phase1] セッション設定の削除", test_delete_session_config),
     ]
 
     passed = 0

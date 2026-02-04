@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import requests
 
+# セッション設定管理モジュールをインポート
+from voicevox_config import load_session_config
+
 
 def load_config(config_path: Path) -> Dict[str, Any]:
     """
@@ -366,26 +369,6 @@ def main(transcript_path: Optional[str] = None):
     script_dir = Path(__file__).parent
     project_root = script_dir.parent
 
-    # 設定を読み込む
-    config_path = project_root / "config" / "voicevox.json"
-    if not config_path.exists():
-        print(f"設定ファイルが見つかりません: {config_path}", file=sys.stderr)
-        sys.exit(1)
-
-    config = load_config(config_path)
-
-    # 読み上げが無効の場合は終了
-    if not config.get("enabled", False):
-        print("VOICEVOX 音声読み上げは無効です")
-        sys.exit(0)
-
-    # VOICEVOX Engine への接続をチェック
-    voicevox_url = config["voicevox_url"]
-    if not check_voicevox_connection(voicevox_url):
-        print(f"VOICEVOX Engine に接続できません: {voicevox_url}", file=sys.stderr)
-        print("docker-compose up -d で起動してください", file=sys.stderr)
-        sys.exit(1)
-
     # transcript パスを取得
     if transcript_path is None:
         # コマンドライン引数から取得
@@ -398,6 +381,21 @@ def main(transcript_path: Optional[str] = None):
     # 例: /Users/.../.claude/projects/-Users-...-work-cc-avator/7f4b7a0a-4288-49e5-b3bc-d00136b5c324.jsonl
     # → 7f4b7a0a-4288-49e5-b3bc-d00136b5c324
     session_id = Path(transcript_path).stem
+
+    # セッション設定を読み込む（グローバル設定とマージ）
+    config = load_session_config(session_id, project_root)
+
+    # 読み上げが無効の場合は終了
+    if not config.get("enabled", False):
+        print("VOICEVOX 音声読み上げは無効です")
+        sys.exit(0)
+
+    # VOICEVOX Engine への接続をチェック
+    voicevox_url = config["voicevox_url"]
+    if not check_voicevox_connection(voicevox_url):
+        print(f"VOICEVOX Engine に接続できません: {voicevox_url}", file=sys.stderr)
+        print("docker-compose up -d で起動してください", file=sys.stderr)
+        sys.exit(1)
 
     # 前回読み上げ位置ファイルのパス
     last_read_file = Path(f"/tmp/voicevox_last_read_{session_id}.txt")

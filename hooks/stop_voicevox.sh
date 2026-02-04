@@ -46,6 +46,43 @@ if [ -z "$TRANSCRIPT_PATH" ]; then
     exit 0  # ClaudeCode を妨げないため exit 0
 fi
 
+# セッションIDを抽出
+# 例: /Users/.../.claude/projects/.../7f4b7a0a-4288-49e5-b3bc-d00136b5c324.jsonl
+# → 7f4b7a0a-4288-49e5-b3bc-d00136b5c324
+SESSION_ID=$(basename "$TRANSCRIPT_PATH" .jsonl)
+
+{
+    echo "Session ID: $SESSION_ID"
+} >> "$LOG_FILE" 2>&1
+
+# セッション設定をチェック（enabled=false ならスキップ）
+SESSION_CONFIG="${PROJECT_ROOT}/.claude/voicevox_sessions/${SESSION_ID}.json"
+GLOBAL_CONFIG="${PROJECT_ROOT}/config/voicevox.json"
+
+# セッション設定が存在する場合はそちらを優先
+if [ -f "$SESSION_CONFIG" ] && command -v jq &> /dev/null; then
+    ENABLED=$(jq -r '.enabled // "null"' "$SESSION_CONFIG" 2>/dev/null)
+    if [ "$ENABLED" = "false" ]; then
+        {
+            echo "VOICEVOX is disabled for this session (session config)"
+        } >> "$LOG_FILE" 2>&1
+        echo "$INPUT"
+        exit 0
+    fi
+fi
+
+# セッション設定がない場合はグローバル設定をチェック
+if [ ! -f "$SESSION_CONFIG" ] && [ -f "$GLOBAL_CONFIG" ] && command -v jq &> /dev/null; then
+    ENABLED=$(jq -r '.enabled // true' "$GLOBAL_CONFIG" 2>/dev/null)
+    if [ "$ENABLED" = "false" ]; then
+        {
+            echo "VOICEVOX is disabled (global config)"
+        } >> "$LOG_FILE" 2>&1
+        echo "$INPUT"
+        exit 0
+    fi
+fi
+
 # Python スクリプトをバックグラウンドで実行
 # エラーが発生しても ClaudeCode の動作を妨げない
 {

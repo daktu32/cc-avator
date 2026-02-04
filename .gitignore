@@ -29,3 +29,6 @@ docker-compose.override.yml
 
 # Reports
 .reports/
+
+# VOICEVOX セッション設定
+.claude/voicevox_sessions/

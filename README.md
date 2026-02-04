@@ -68,13 +68,69 @@ cd cc-avator
 
 ## 使い方
 
-1. VOICEVOX Engine が起動していることを確認
+### 🎯 基本的な使い方
+
+**デフォルトでは読み上げはオフです**。ClaudeCode で明示的に指示した場合のみ読み上げます。
+
+#### 読み上げを開始
 
 ```bash
-docker ps | grep voicevox_engine
+./scripts/monitor.sh enable
 ```
 
-2. ClaudeCode で質問すると、応答が自動で読み上げられます
+このコマンドを実行した時点以降の ClaudeCode の応答がリアルタイムで読み上げられます。
+
+#### 読み上げを停止
+
+```bash
+./scripts/monitor.sh disable
+```
+
+#### ステータス確認
+
+```bash
+./scripts/monitor.sh status
+```
+
+### 💡 使用例
+
+1. **ClaudeCode で作業中に読み上げたくなったとき**
+   ```bash
+   # ClaudeCode に「読み上げて」と指示
+   # → ClaudeCode が ./scripts/monitor.sh enable を実行
+   # → この時点以降の応答が読み上げられる
+   ```
+
+2. **読み上げを止めたいとき**
+   ```bash
+   # ClaudeCode に「読み上げ停止」と指示
+   # → ClaudeCode が ./scripts/monitor.sh disable を実行
+   # → 読み上げが停止
+   ```
+
+### 🚀 リアルタイム読み上げの仕組み
+
+- モニターは transcript ファイルをリアルタイムで監視
+- 新しいメッセージが追加されたら即座に読み上げ開始（5秒以内）
+- enable コマンド実行時点のタイムスタンプを記録
+- それ以降のメッセージのみを読み上げ
+
+### ⚙️ 詳細なコマンド
+
+```bash
+# モニターを手動で起動（通常は不要）
+./scripts/monitor.sh start
+
+# モニターを手動で停止（通常は不要）
+./scripts/monitor.sh stop
+
+# モニターを再起動
+./scripts/monitor.sh restart
+```
+
+### 📌 Stop フック（非推奨）
+
+Stop フックを使用する場合、ClaudeCode の応答が完全に終了してから読み上げが開始されます。長い応答の場合は読み上げ開始が遅くなるため、enable/disable コマンドの使用を推奨します。
 
 ## 設定のカスタマイズ
 
