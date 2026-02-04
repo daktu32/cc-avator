@@ -584,6 +584,138 @@ def test_delete_session_config():
     return True
 
 
+# ===================================================================
+# Phase 2: スキル実装テスト
+# ===================================================================
+
+def test_skill_on_off():
+    """スキルの on/off コマンドテスト"""
+    try:
+        from voicevox_skill import execute_on, execute_off, get_current_session_id
+    except ImportError:
+        print("スキップ: voicevox_skill モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-skill-on-off"
+
+    try:
+        # on コマンドを実行
+        result = execute_on(session_id, project_root)
+        assert "有効化" in result or "enabled" in result.lower(), f"Expected success message, got: {result}"
+
+        # セッション設定を確認
+        config = load_session_config(session_id, project_root)
+        assert config["enabled"] == True, f"Expected enabled=True, got: {config['enabled']}"
+
+        # off コマンドを実行
+        result = execute_off(session_id, project_root)
+        assert "無効化" in result or "disabled" in result.lower(), f"Expected success message, got: {result}"
+
+        # セッション設定を確認
+        config = load_session_config(session_id, project_root)
+        assert config["enabled"] == False, f"Expected enabled=False, got: {config['enabled']}"
+
+        print("✓ test_skill_on_off passed")
+        return True
+
+    finally:
+        # クリーンアップ
+        if delete_session_config:
+            delete_session_config(session_id, project_root)
+
+
+def test_skill_speaker():
+    """スキルの speaker コマンドテスト"""
+    try:
+        from voicevox_skill import execute_speaker
+    except ImportError:
+        print("スキップ: voicevox_skill モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-skill-speaker"
+
+    try:
+        # speaker コマンドを実行
+        result = execute_speaker(session_id, 8, project_root)
+        assert "話者" in result or "speaker" in result.lower(), f"Expected success message, got: {result}"
+
+        # セッション設定を確認
+        config = load_session_config(session_id, project_root)
+        assert config["speaker_id"] == 8, f"Expected speaker_id=8, got: {config['speaker_id']}"
+
+        print("✓ test_skill_speaker passed")
+        return True
+
+    finally:
+        # クリーンアップ
+        if delete_session_config:
+            delete_session_config(session_id, project_root)
+
+
+def test_skill_speed():
+    """スキルの speed コマンドテスト"""
+    try:
+        from voicevox_skill import execute_speed
+    except ImportError:
+        print("スキップ: voicevox_skill モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-skill-speed"
+
+    try:
+        # speed コマンドを実行
+        result = execute_speed(session_id, 1.5, project_root)
+        assert "速度" in result or "speed" in result.lower(), f"Expected success message, got: {result}"
+
+        # セッション設定を確認
+        config = load_session_config(session_id, project_root)
+        assert config["speed_scale"] == 1.5, f"Expected speed_scale=1.5, got: {config['speed_scale']}"
+
+        print("✓ test_skill_speed passed")
+        return True
+
+    finally:
+        # クリーンアップ
+        if delete_session_config:
+            delete_session_config(session_id, project_root)
+
+
+def test_skill_status():
+    """スキルの status コマンドテスト"""
+    try:
+        from voicevox_skill import execute_status
+    except ImportError:
+        print("スキップ: voicevox_skill モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-skill-status"
+
+    try:
+        # セッション設定を作成
+        test_config = {
+            "enabled": True,
+            "speaker_id": 8,
+            "speed_scale": 1.5
+        }
+        save_session_config(session_id, test_config, project_root)
+
+        # status コマンドを実行
+        result = execute_status(session_id, project_root)
+
+        # 出力に設定情報が含まれていることを確認
+        assert "enabled" in result.lower() or "有効" in result, "Status should show enabled state"
+        assert "8" in result, "Status should show speaker_id"
+        assert "1.5" in result, "Status should show speed_scale"
+
+        print("✓ test_skill_status passed")
+        return True
+
+    finally:
+        # クリーンアップ
+        if delete_session_config:
+            delete_session_config(session_id, project_root)
+
+
 def run_all_tests():
     """すべてのテストを実行"""
     print("=" * 60)
@@ -607,6 +739,11 @@ def run_all_tests():
         ("[Phase1] 設定マージ優先順位", test_config_merge_priority),
         ("[Phase1] セッション設定が存在しない場合", test_session_config_not_exists),
         ("[Phase1] セッション設定の削除", test_delete_session_config),
+        # Phase 2: スキル実装テスト
+        ("[Phase2] スキル on/off コマンド", test_skill_on_off),
+        ("[Phase2] スキル speaker コマンド", test_skill_speaker),
+        ("[Phase2] スキル speed コマンド", test_skill_speed),
+        ("[Phase2] スキル status コマンド", test_skill_status),
     ]
 
     passed = 0
