@@ -54,8 +54,8 @@ def get_monitor_pid_file(project_root: Path) -> Path:
     if transcript_dir:
         watch_dir = str(Path(transcript_dir).parent)
     else:
-        # デフォルトは project_root を使用
-        watch_dir = str(project_root)
+        # デフォルトは voicevox_monitor.py のデフォルト (~/.claude/projects) を使用
+        watch_dir = os.path.expanduser("~/.claude/projects")
 
     watch_dir_hash = hashlib.md5(watch_dir.encode()).hexdigest()[:8]
     # voicevox_monitor.py と同じく /tmp に配置
@@ -116,18 +116,18 @@ def start_monitor(project_root: Path) -> int:
     monitor_script = project_root / "scripts" / "voicevox_monitor.py"
     venv_python = project_root / ".venv" / "bin" / "python3"
 
-    # watch_dir を決定
-    # 環境変数 CLAUDE_TRANSCRIPT_PATH が設定されている場合はその親ディレクトリ
-    # それ以外の場合は project_root
+    # コマンドライン引数を構築
+    # 環境変数 CLAUDE_TRANSCRIPT_PATH が設定されている場合のみ --watch-dir を指定
+    # それ以外の場合は voicevox_monitor.py のデフォルト (~/.claude/projects) を使用
+    cmd = [str(venv_python), str(monitor_script), "start"]
     transcript_path = os.environ.get("CLAUDE_TRANSCRIPT_PATH")
     if transcript_path:
         watch_dir = str(Path(transcript_path).parent)
-    else:
-        watch_dir = str(project_root)
+        cmd.extend(["--watch-dir", watch_dir])
 
     # バックグラウンドでモニターを起動
     process = subprocess.Popen(
-        [str(venv_python), str(monitor_script), "start", "--watch-dir", watch_dir],
+        cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True
