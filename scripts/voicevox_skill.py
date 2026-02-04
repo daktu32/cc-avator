@@ -6,6 +6,9 @@ VOICEVOX スキルハンドラー
 
 import sys
 import os
+import signal
+import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -33,9 +36,170 @@ def get_current_session_id() -> Optional[str]:
     return os.environ.get("CLAUDE_SESSION_ID")
 
 
+def get_monitor_pid_file(project_root: Path) -> Path:
+    """
+    モニターのPIDファイルパスを取得
+
+    Args:
+        project_root: プロジェクトルート
+
+    Returns:
+        PIDファイルのパス
+    """
+    import hashlib
+
+    # transcript ディレクトリをハッシュ化してPIDファイル名に使用
+    # （voicevox_monitor.py と同じロジック）
+    transcript_dir = os.environ.get("CLAUDE_TRANSCRIPT_PATH", "")
+    if transcript_dir:
+        watch_dir = str(Path(transcript_dir).parent)
+    else:
+        # デフォルトは project_root を使用
+        watch_dir = str(project_root)
+
+    watch_dir_hash = hashlib.md5(watch_dir.encode()).hexdigest()[:8]
+    # voicevox_monitor.py と同じく /tmp に配置
+    pid_file = Path(f"/tmp/voicevox_monitor_{watch_dir_hash}.pid")
+
+    return pid_file
+
+
+def is_monitor_running(project_root: Path) -> bool:
+    """
+    モニターが起動しているか確認
+
+    Args:
+        project_root: プロジェクトルート
+
+    Returns:
+        起動している場合 True、それ以外 False
+    """
+    pid_file = get_monitor_pid_file(project_root)
+
+    if not pid_file.exists():
+        return False
+
+    try:
+        with open(pid_file, 'r') as f:
+            pid = int(f.read().strip())
+
+        # プロセスが存在するか確認
+        os.kill(pid, 0)
+        return True
+    except (ValueError, ProcessLookupError, OSError):
+        # PIDファイルが不正、またはプロセスが存在しない
+        pid_file.unlink(missing_ok=True)
+        return False
+
+
+def start_monitor(project_root: Path) -> int:
+    """
+    モニターを起動
+
+    Args:
+        project_root: プロジェクトルート
+
+    Returns:
+        起動したモニターのPID
+
+    Raises:
+        RuntimeError: モニターの起動に失敗した場合
+    """
+    # 既に起動している場合はスキップ
+    if is_monitor_running(project_root):
+        pid_file = get_monitor_pid_file(project_root)
+        with open(pid_file, 'r') as f:
+            pid = int(f.read().strip())
+        return pid
+
+    # モニタースクリプトのパス
+    monitor_script = project_root / "scripts" / "voicevox_monitor.py"
+    venv_python = project_root / ".venv" / "bin" / "python3"
+
+    # watch_dir を決定
+    # 環境変数 CLAUDE_TRANSCRIPT_PATH が設定されている場合はその親ディレクトリ
+    # それ以外の場合は project_root
+    transcript_path = os.environ.get("CLAUDE_TRANSCRIPT_PATH")
+    if transcript_path:
+        watch_dir = str(Path(transcript_path).parent)
+    else:
+        watch_dir = str(project_root)
+
+    # バックグラウンドでモニターを起動
+    process = subprocess.Popen(
+        [str(venv_python), str(monitor_script), "start", "--watch-dir", watch_dir],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True
+    )
+
+    # PIDファイルが作成されるまで待つ（最大10秒）
+    pid_file = get_monitor_pid_file(project_root)
+    for _ in range(100):
+        if pid_file.exists():
+            with open(pid_file, 'r') as f:
+                pid = int(f.read().strip())
+            return pid
+        time.sleep(0.1)
+
+    # タイムアウト：モニターの起動に失敗
+    # プロセスが終了したかチェック
+    return_code = process.poll()
+    if return_code is not None:
+        raise RuntimeError(
+            f"モニターの起動に失敗しました (終了コード: {return_code})。"
+            "VOICEVOX Engine が起動しているか確認してください。"
+        )
+    else:
+        raise RuntimeError("モニターの起動がタイムアウトしました")
+
+
+def stop_monitor(project_root: Path) -> bool:
+    """
+    モニターを停止
+
+    Args:
+        project_root: プロジェクトルート
+
+    Returns:
+        停止に成功した場合 True、それ以外 False
+    """
+    pid_file = get_monitor_pid_file(project_root)
+
+    if not pid_file.exists():
+        return True
+
+    try:
+        with open(pid_file, 'r') as f:
+            pid = int(f.read().strip())
+
+        # プロセスを終了
+        os.kill(pid, signal.SIGTERM)
+
+        # プロセスが終了するまで待つ（最大5秒）
+        for _ in range(50):
+            try:
+                os.kill(pid, 0)
+                time.sleep(0.1)
+            except ProcessLookupError:
+                # プロセスが終了した
+                break
+
+        # PIDファイルを削除
+        pid_file.unlink(missing_ok=True)
+
+        return True
+    except (ValueError, ProcessLookupError, OSError):
+        # PIDファイルが不正、またはプロセスが存在しない
+        pid_file.unlink(missing_ok=True)
+        return True
+
+
 def execute_on(session_id: str, project_root: Path) -> str:
     """
     VOICEVOX 読み上げを有効化
+
+    モニターが起動していない場合、モニターを起動します。
 
     Args:
         session_id: セッションID
@@ -53,12 +217,19 @@ def execute_on(session_id: str, project_root: Path) -> str:
     # セッション設定を保存
     save_session_config(session_id, config, project_root)
 
-    return f"✅ VOICEVOX読み上げを有効化しました (session: {session_id})"
+    # モニターが起動していない場合、モニターを起動
+    if not is_monitor_running(project_root):
+        pid = start_monitor(project_root)
+        return f"✅ VOICEVOX読み上げを有効化しました (session: {session_id}, monitor PID: {pid})"
+    else:
+        return f"✅ VOICEVOX読み上げを有効化しました (session: {session_id})"
 
 
 def execute_off(session_id: str, project_root: Path) -> str:
     """
     VOICEVOX 読み上げを無効化
+
+    モニターが起動している場合、モニターを停止します。
 
     Args:
         session_id: セッションID
@@ -76,7 +247,12 @@ def execute_off(session_id: str, project_root: Path) -> str:
     # セッション設定を保存
     save_session_config(session_id, config, project_root)
 
-    return f"⛔ VOICEVOX読み上げを無効化しました (session: {session_id})"
+    # モニターが起動している場合、モニターを停止
+    if is_monitor_running(project_root):
+        stop_monitor(project_root)
+        return f"⛔ VOICEVOX読み上げを無効化しました (session: {session_id}, monitor stopped)"
+    else:
+        return f"⛔ VOICEVOX読み上げを無効化しました (session: {session_id})"
 
 
 def execute_speaker(session_id: str, speaker_id: int, project_root: Path) -> str:

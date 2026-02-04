@@ -716,6 +716,158 @@ def test_skill_status():
             delete_session_config(session_id, project_root)
 
 
+# ===================================================================
+# Phase 2 拡張: モニター起動/停止テスト
+# ===================================================================
+
+def test_monitor_management():
+    """モニターの起動/停止管理テスト"""
+    try:
+        from voicevox_skill import is_monitor_running, start_monitor, stop_monitor
+    except ImportError:
+        print("スキップ: voicevox_skill モジュールがインポートできません")
+        return False
+
+    try:
+        # 既存のモニターを停止（クリーンな状態で開始）
+        if is_monitor_running(project_root):
+            stop_monitor(project_root)
+
+        # モニターが停止していることを確認
+        assert not is_monitor_running(project_root), "Monitor should not be running"
+
+        # モニターを起動
+        pid = start_monitor(project_root)
+        assert pid > 0, f"Expected valid PID, got: {pid}"
+
+        # 少し待つ（モニターの起動を待つ）
+        import time
+        time.sleep(1)
+
+        # モニターが起動していることを確認
+        assert is_monitor_running(project_root), "Monitor should be running after start"
+
+        # モニターを停止
+        stop_monitor(project_root)
+
+        # 少し待つ（モニターの停止を待つ）
+        time.sleep(1)
+
+        # モニターが停止していることを確認
+        assert not is_monitor_running(project_root), "Monitor should not be running after stop"
+
+        print("✓ test_monitor_management passed")
+        return True
+
+    finally:
+        # クリーンアップ（モニターが起動している場合は停止）
+        try:
+            from voicevox_skill import is_monitor_running, stop_monitor
+            if is_monitor_running(project_root):
+                stop_monitor(project_root)
+        except:
+            pass
+
+
+def test_skill_on_with_monitor():
+    """スキル on コマンドでモニターを起動するテスト"""
+    try:
+        from voicevox_skill import execute_on, is_monitor_running, stop_monitor
+    except ImportError:
+        print("スキップ: voicevox_skill モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-skill-on-monitor"
+
+    try:
+        # 既存のモニターを停止（クリーンな状態で開始）
+        if is_monitor_running(project_root):
+            stop_monitor(project_root)
+
+        # モニターが停止していることを確認
+        assert not is_monitor_running(project_root), "Monitor should not be running initially"
+
+        # on コマンドを実行
+        result = execute_on(session_id, project_root)
+        assert "有効化" in result or "enabled" in result.lower(), f"Expected success message, got: {result}"
+
+        # 少し待つ（モニターの起動を待つ）
+        import time
+        time.sleep(1)
+
+        # モニターが起動していることを確認
+        assert is_monitor_running(project_root), "Monitor should be running after execute_on"
+
+        # セッション設定を確認
+        config = load_session_config(session_id, project_root)
+        assert config["enabled"] == True, f"Expected enabled=True, got: {config['enabled']}"
+
+        print("✓ test_skill_on_with_monitor passed")
+        return True
+
+    finally:
+        # クリーンアップ
+        try:
+            from voicevox_skill import is_monitor_running, stop_monitor
+            if is_monitor_running(project_root):
+                stop_monitor(project_root)
+        except:
+            pass
+        if delete_session_config:
+            delete_session_config(session_id, project_root)
+
+
+def test_skill_off_with_monitor():
+    """スキル off コマンドでモニターを停止するテスト"""
+    try:
+        from voicevox_skill import execute_off, is_monitor_running, start_monitor, stop_monitor
+    except ImportError:
+        print("スキップ: voicevox_skill モジュールがインポートできません")
+        return False
+
+    session_id = "test-session-skill-off-monitor"
+
+    try:
+        # モニターを起動
+        if not is_monitor_running(project_root):
+            start_monitor(project_root)
+
+        # 少し待つ（モニターの起動を待つ）
+        import time
+        time.sleep(1)
+
+        # モニターが起動していることを確認
+        assert is_monitor_running(project_root), "Monitor should be running initially"
+
+        # off コマンドを実行
+        result = execute_off(session_id, project_root)
+        assert "無効化" in result or "disabled" in result.lower(), f"Expected success message, got: {result}"
+
+        # 少し待つ（モニターの停止を待つ）
+        time.sleep(1)
+
+        # モニターが停止していることを確認
+        assert not is_monitor_running(project_root), "Monitor should not be running after execute_off"
+
+        # セッション設定を確認
+        config = load_session_config(session_id, project_root)
+        assert config["enabled"] == False, f"Expected enabled=False, got: {config['enabled']}"
+
+        print("✓ test_skill_off_with_monitor passed")
+        return True
+
+    finally:
+        # クリーンアップ
+        try:
+            from voicevox_skill import is_monitor_running, stop_monitor
+            if is_monitor_running(project_root):
+                stop_monitor(project_root)
+        except:
+            pass
+        if delete_session_config:
+            delete_session_config(session_id, project_root)
+
+
 def run_all_tests():
     """すべてのテストを実行"""
     print("=" * 60)
@@ -744,6 +896,10 @@ def run_all_tests():
         ("[Phase2] スキル speaker コマンド", test_skill_speaker),
         ("[Phase2] スキル speed コマンド", test_skill_speed),
         ("[Phase2] スキル status コマンド", test_skill_status),
+        # Phase 2 拡張: モニター起動/停止テスト
+        ("[Phase2-Ext] モニター起動/停止管理", test_monitor_management),
+        ("[Phase2-Ext] スキル on でモニター起動", test_skill_on_with_monitor),
+        ("[Phase2-Ext] スキル off でモニター停止", test_skill_off_with_monitor),
     ]
 
     passed = 0
